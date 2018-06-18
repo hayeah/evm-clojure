@@ -34,3 +34,18 @@
         "should c[onvert 32 bytes constant to push32")
     (is (= (binary '('1 '2 0x1)) '("6001" "6002" "01")) "should normal opcode to hex code")))
 
+(deftest resolve-binding-test
+  (testing "lexical binding resolution"
+    (is (= (resolve-binding 'a '()) nil) "resolves to nil if there is no binding")
+    (is (= (resolve-binding 'a '((a))) 1))
+    (is (= (resolve-binding 'a '((a b))) 1))
+    (is (= (resolve-binding 'b '((a b))) 2))
+
+    (is (= (resolve-binding 'b '((b c) (a b))) 1) "b in first scope should shadow the later scope")
+    (is (= (resolve-binding 'a '((b c) (a b))) 3) "look for a in outter scope")))
+
+(deftest rewrite-variables-test
+  (testing "rewrite variables in sexp"
+    (is (= (rewrite-variables '((a)) '(foo a a a)) '(foo (:dup 3) (:dup 2) (:dup 1))))
+    (is (= (rewrite-variables '((a b)) '(foo b b)) '(foo (:dup 3) (:dup 2))))
+    ))
