@@ -56,6 +56,7 @@
 (defn rewrite-variables [scopes exp]
   (rewrite-variables-inner scopes exp 0))
 
+; compile: map of blocks -> map of assembly
 ; assembly: expression -> assembly (list of symbolic instuctions)
 ; bytecode: assembly -> bytecode (list of opcodes)
 ; binary: bytecode -> binary (string of hex bytes)
@@ -68,7 +69,14 @@
     :else
     (let [inst (first exp)
           args (rest exp)]
-      `(~@(mapcat assembly args) ~inst))))
+      (case inst
+          ; define a block
+        block '()
+        blockoffset '()
+        blocksize '()
+          ; A normal instruction.
+          ; TODO: verify instruction is valid
+        `(~@(mapcat assembly args) ~inst)))))
 
 (defn instruction-bytecode [inst]
   "Convert a single instruction to opcodes"
@@ -104,10 +112,49 @@
 (defn binary [opcodes]
   (map (fn [opcode]
          (match [opcode]
-      ; convert constant numbers to 32 bytes hex string
+           ; convert constant numbers to 32 bytes hex string
            [(['quote n] :seq)] (push-bytecode n)
            :else (format "%02x" opcode)))
        opcodes))
+
+(defn analyze-jump-destinations [instructions]
+  "Analyze the location of jump destinations"
+  (loop
+   [instruction (first instructions)
+    instructions (rest instructions)
+    offset 0
+    ; jumps encountered, and their assume destination size
+    jumps {}
+    ; actual destinations
+    destinations {}]
+
+    ; TODO compare each jump size assumption with actual destination size. Retry if necessary
+    (if (nil? instruction) ; done
+      (do
+        ; (println jumps offset)
+        ; TODO check jumping to unknown destination
+        destinations)
+      ; else
+      (match [instruction]
+        [([:jump label] :seq)]
+        (let [seen-jump (contains? jumps label)
+              dest-size (if seen-jump (jumps label) 1) ; FIXME: should be size of current offset
+              jumps (if seen-jump jumps (assoc jumps label dest-size))
+              offset (+ offset 2 dest-size)]
+          (recur (first instructions) (rest instructions) offset jumps destinations)) [([:jumpdest label] :seq)]
+        (do (assert (not (contains? destinations label)) "jumpdest label should be unique")
+            (let [destinations (assoc destinations label offset)
+                  offset (+ offset 1)]
+              (recur (first instructions) (rest instructions) offset jumps destinations)))
+
+        ; sizeof-instruction
+        :else
+        (let [instruction-size 1
+              offset (+ offset instruction-size)]
+          (recur (first instructions) (rest instructions) offset jumps destinations))))))
+
+(defn compile [blocks]
+  "Compile map of named blocks to assembly")
 
 (defn genassembly [exp]
   "Compile a program to assembly"

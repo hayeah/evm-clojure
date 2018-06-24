@@ -47,5 +47,22 @@
 (deftest rewrite-variables-test
   (testing "rewrite variables in sexp"
     (is (= (rewrite-variables '((a)) '(foo a a a)) '(foo (:dup 3) (:dup 2) (:dup 1))))
-    (is (= (rewrite-variables '((a b)) '(foo b b)) '(foo (:dup 3) (:dup 2))))
-    ))
+    (is (= (rewrite-variables '((a b)) '(foo b b)) '(foo (:dup 3) (:dup 2))))))
+
+(deftest analyze-jump-destinations-test
+  (testing "analyze jump destinations"
+    (let [{zero :zero foo :foo bar :bar}
+          (analyze-jump-destinations
+           '((:jumpdest :zero) ; 0
+             (:jump :foo) ; 1
+             (:jump :bar) ; 4
+             (:null) ; 7
+             (:null) ; 8
+             (:jumpdest :foo) ; 9
+             (:null) ; 10
+             (:null) ; 11
+             ; 12
+             (:jumpdest :bar)))]
+      (is (= zero 0))
+      (is (= foo 9))
+      (is (= bar 12)))))
