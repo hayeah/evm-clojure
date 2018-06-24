@@ -1,36 +1,41 @@
-# clll
+A EVM Low Level Lisp compiler, in Clojure.
 
-FIXME: description
+Start REPL:
 
-## Installation
+```
+lein repl
+```
 
-Download from http://example.com/FIXME.
+Then load the module
 
-## Usage
+```
+(require 'clll.core :reload)
+```
 
-FIXME: explanation
+Compile a minimal program:
 
-    $ java -jar clll-0.1.0-standalone.jar [args]
+```
+(clll.core/genbinary '[
+    (mstore 0 0xaabbcc)
+    (return 0 32)
+])
 
-## Options
+; => "62aabbcc60005260206000f3"
+```
 
-FIXME: listing of options this app accepts.
+Run with EVM CLI:
 
-## Examples
+```
+evm  --statdump --code 62aabbcc60005260206000f3 --input aabb run
+```
 
-...
+```
+evm execution time: 119.82µs
+heap objects:       10424
+allocations:        1516432
+total allocations:  1516432
+GC calls:           0
+Gas used:           18
 
-### Bugs
-
-...
-
-### Any Other Sections
-### That You Think
-### Might be Useful
-
-## License
-
-Copyright © 2018 FIXME
-
-Distributed under the Eclipse Public License either version 1.0 or (at
-your option) any later version.
+0x0000000000000000000000000000000000000000000000000000000000aabbcc
+```
