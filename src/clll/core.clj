@@ -98,7 +98,7 @@
 
 (defn number-bytesize [n]
   "Number of bytes that can contain an integer"
-  (max (int (/ (.bitLength (bigint n)) 8))
+  (max (int (Math/ceil  (/ (.bitLength (bigint n)) 8)))
        1))
 
 (defn push-bytecode [n]
@@ -117,30 +117,42 @@
            :else (format "%02x" opcode)))
        opcodes))
 
-(defn analyze-jump-destinations [instructions]
-  "Analyze the location of jump destinations"
+(defn analyze-jump-destinations [_instructions]
+  "Analyze the jump destinations offsets"
+  ; Iterate through instructions, assume that jump destinations are all 1 bytes initially.
+  ; Track actual jump destinations, and if any jump destination turns out to be multiple bytes,
+  ; reajust assumptions and recalcuate again.
   (loop
-   [instruction (first instructions)
-    instructions (rest instructions)
+   [instruction (first _instructions)
+    instructions (rest _instructions)
     offset 0
     ; jumps encountered, and their assume destination size
     jumps {}
     ; actual destinations
     destinations {}]
 
-    ; TODO compare each jump size assumption with actual destination size. Retry if necessary
-    (if (nil? instruction) ; done
+    (if (nil? instruction) ; done. check result
       (do
-        ; (println jumps offset)
         ; TODO check jumping to unknown destination
-        destinations)
-      ; else
+        ; compare each jump size assumption with actual destination size. Retry if necessary
+        (let [destination-sizes (into {} (for [[k v] destinations] [k (number-bytesize v)]))
+              new-jumps (merge jumps destination-sizes)]
+            ; (println "a" jumps offset destinations destination-sizes new-jumps)
+            (if (= jumps new-jumps)
+              destinations ; jump size assumptions are correct. return.
+              (let [instructions _instructions]
+                ; jump size assumptions violated. go back and try again with new assumptions
+                (recur (first instructions) (rest instructions) 0 new-jumps {})))))
+
+      ; track offset of each instruction. record all jumpst destinations
       (match [instruction]
         [([:jump label] :seq)]
         (let [seen-jump (contains? jumps label)
               dest-size (if seen-jump (jumps label) 1) ; FIXME: should be size of current offset
               jumps (if seen-jump jumps (assoc jumps label dest-size))
-              offset (+ offset 2 dest-size)]
+              ; push(n) dest, jump
+              jump-size (+ 2 dest-size)
+              offset (+ offset jump-size)]
           (recur (first instructions) (rest instructions) offset jumps destinations)) [([:jumpdest label] :seq)]
         (do (assert (not (contains? destinations label)) "jumpdest label should be unique")
             (let [destinations (assoc destinations label offset)

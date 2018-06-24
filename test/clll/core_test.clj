@@ -19,6 +19,7 @@
     (is (= (number-bytesize 0x0) 1))
     (is (= (number-bytesize 0xaa) 1))
 
+    (is (= (number-bytesize 0x100) 2))
     (is (= (number-bytesize 0xaabb) 2))
     (is (= (number-bytesize 0xffff) 2))
 
@@ -65,4 +66,36 @@
              (:jumpdest :bar)))]
       (is (= zero 0))
       (is (= foo 9))
-      (is (= bar 12)))))
+      (is (= bar 12)))
+
+    (let [{foo :foo bar :bar}
+          (analyze-jump-destinations
+           '((:null) (:jumpdest :foo) (:jumpdest :bar)))]
+      (is (= foo 1))
+      (is (= bar 2)))
+
+    (let [{foo :foo}
+          (analyze-jump-destinations
+           `((:jump :foo)
+             ~@(for [x (range 252)] :null)
+             (:jumpdest :foo)))]
+      (is (= foo 255)))
+
+    (let [{foo :foo}
+          (analyze-jump-destinations
+           `((:jump :foo) ; push2 0x0101, jump  (4)
+             ~@(for [x (range 253)] :null) ; 253
+             (:jumpdest :foo)))]
+      (is (= foo 257)))
+
+      (let [{foo :foo bar :bar}
+        (analyze-jump-destinations
+         `((:jumpdest :bar)
+           (:jump :foo) ; push2 0x0101, jump  (4)
+           ~@(for [x (range 253)] :null) ; 253
+           (:jumpdest :foo)))]
+    (is (= foo 258))
+    (is (= bar 0))
+    )
+
+      ))
