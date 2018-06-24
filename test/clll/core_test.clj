@@ -5,8 +5,8 @@
 (deftest assembly-test
   (testing "Generate EVM assembly"
     (is (= (assembly '(10)) '(10)))
-    (is (= (assembly '(add 11 12)) '(11 12 add)))
-    (is (= (assembly '(add (add 11 12) 13)) '(11 12 add 13 add)))))
+    (is (= (assembly '(add 11 12)) '(12 11 add)))
+    (is (= (assembly '(add (add 11 12) 13)) '(13 12 11 add add)))))
 
 (deftest bytecode-test
   (testing "Convert symbolic assembly to bytecode"

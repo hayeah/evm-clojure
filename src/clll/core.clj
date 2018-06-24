@@ -11,9 +11,11 @@
 (def invalid-opcode 0xfe)
 (def opcode-push 0x60)
 
-(def opcodes {'push1 opcode-push ; ... push32
-              'add 0x01
-              'invalid invalid-opcode})
+(def opcodes {:push1 opcode-push ; ... push32
+              :add 0x01
+              :mstore 0x52
+              :return 0xf3
+              :invalid invalid-opcode})
 
 (defn resolve-binding [var scopes]
   "Return the stack position of a variable in lexical scopes"
@@ -66,6 +68,7 @@
   (cond
     ;; (n: number) => push n
     (number? exp) `(~exp)
+    (vector? exp) (mapcat assembly exp)
     :else
     (let [inst (first exp)
           args (rest exp)]
@@ -76,13 +79,15 @@
         blocksize '()
           ; A normal instruction.
           ; TODO: verify instruction is valid
-        `(~@(mapcat assembly args) ~inst)))))
+        `(~@(mapcat assembly (reverse args)) ~inst)))))
 
 (defn instruction-bytecode [inst]
   "Convert a single instruction to opcodes"
   (cond
     (number? inst) `(quote ~inst)
-    (symbol? inst) (opcodes inst invalid-opcode)))
+    (symbol? inst) (opcodes (keyword inst) invalid-opcode)
+    (keyword? inst) (opcodes inst invalid-opcode)
+    ))
 
 (defn bytecode [insts]
   "Take a list of assembly instructions and produce bytecode"
