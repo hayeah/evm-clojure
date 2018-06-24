@@ -86,8 +86,7 @@
   (cond
     (number? inst) `(quote ~inst)
     (symbol? inst) (opcodes (keyword inst) invalid-opcode)
-    (keyword? inst) (opcodes inst invalid-opcode)
-    ))
+    (keyword? inst) (opcodes inst invalid-opcode)))
 
 (defn bytecode [insts]
   "Take a list of assembly instructions and produce bytecode"
@@ -122,7 +121,7 @@
            :else (format "%02x" opcode)))
        opcodes))
 
-(defn analyze-jump-destinations [_instructions]
+(defn analyze-jump-destinations [_instructions & {:keys [_jumps _destinations _offset]}]
   "Analyze the jump destinations offsets"
   ; Iterate through instructions, assume that jump destinations are all 1 bytes initially.
   ; Track actual jump destinations, and if any jump destination turns out to be multiple bytes,
@@ -130,11 +129,15 @@
   (loop
    [instruction (first _instructions)
     instructions (rest _instructions)
-    offset 0
+    offset (or _offset 0)
     ; jumps encountered, and their assume destination size
-    jumps {}
+    jumps (or _jumps {})
     ; actual destinations
-    destinations {}]
+    destinations (or _destinations {})
+
+    blocksizes {}]
+
+    ; (println offset)
 
     (if (nil? instruction) ; done. check result
       (do
@@ -143,32 +146,43 @@
         (let [destination-sizes (into {} (for [[k v] destinations] [k (number-bytesize v)]))
               new-jumps (merge jumps destination-sizes)]
             ; (println "a" jumps offset destinations destination-sizes new-jumps)
-            (if (= jumps new-jumps)
-              destinations ; jump size assumptions are correct. return.
-              (let [instructions _instructions]
+          (if (= jumps new-jumps)
+            {:jumpdests destinations :offset offset :jumps new-jumps :blocksizes blocksizes} ; jump size assumptions are correct. return.
+            (let [instructions _instructions]
                 ; jump size assumptions violated. go back and try again with new assumptions
-                (recur (first instructions) (rest instructions) 0 new-jumps {})))))
+              (recur (first instructions) (rest instructions) 0 new-jumps {} {})))))
 
       ; track offset of each instruction. record all jumpst destinations
       (match [instruction]
-        [([:jump label] :seq)]
+        [([:block label & blockbody] :seq)]
+        (do
+          ; (println :block label offset)
+          (let [blockstart (+ offset 1)
+                result (analyze-jump-destinations blockbody :_jumps jumps :_destinations destinations :_offset blockstart)
+                {destinations :jumpdests jumps :jumps blockend :offset} result
+                ; jumpdest for the block
+                destinations (assoc destinations label offset)
+                ; block size excludes the jumpdest
+                blocksize (- blockend blockstart)
+                blocksizes (assoc blocksizes label blocksize)]
+              ; (println :block label blockbody)
+            (recur (first instructions) (rest instructions) blockend jumps destinations blocksizes))) [([:jump label] :seq)]
         (let [seen-jump (contains? jumps label)
               dest-size (if seen-jump (jumps label) 1) ; FIXME: should be size of current offset
               jumps (if seen-jump jumps (assoc jumps label dest-size))
               ; push(n) dest, jump
               jump-size (+ 2 dest-size)
               offset (+ offset jump-size)]
-          (recur (first instructions) (rest instructions) offset jumps destinations)) [([:jumpdest label] :seq)]
+          (recur (first instructions) (rest instructions) offset jumps destinations blocksizes)) [([:jumpdest label] :seq)]
         (do (assert (not (contains? destinations label)) "jumpdest label should be unique")
             (let [destinations (assoc destinations label offset)
                   offset (+ offset 1)]
-              (recur (first instructions) (rest instructions) offset jumps destinations)))
-
+              (recur (first instructions) (rest instructions) offset jumps destinations blocksizes)))
         ; sizeof-instruction
         :else
         (let [instruction-size 1
               offset (+ offset instruction-size)]
-          (recur (first instructions) (rest instructions) offset jumps destinations))))))
+          (recur (first instructions) (rest instructions) offset jumps destinations blocksizes))))))
 
 (defn compile [blocks]
   "Compile map of named blocks to assembly")
