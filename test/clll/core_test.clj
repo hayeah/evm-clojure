@@ -71,42 +71,50 @@
             '((:jumpdest :zero) ; 0
               (:jump :foo) ; 1
               (:jump :bar) ; 4
-              (:null) ; 7
-              (:null) ; 8
+              :null ; 7
+              :null ; 8
               (:jumpdest :foo) ; 9
-              (:null) ; 10
-              (:null) ; 11
+              :null ; 10
+              :null ; 11
              ; 12
               (:jumpdest :bar))) :jumpdests)]
       (is (= zero 0))
       (is (= foo 9))
       (is (= bar 12)))
 
+    (let [{foo :foo}
+          ((analyze-jump-destinations
+            `((:jump :foo) ; push1 0xXX, jump  (3)
+              ~@(for [x (range 126)] 0x00) ; 252
+              (:jumpdest :foo))) :jumpdests)]
+      (is (= foo 255)))
+
+    (let [{foo :foo}
+          ((analyze-jump-destinations
+            `((:jump :foo) ; push2 0xXXXX, jump  (4)
+              ~@(for [x (range 126)] 0x00) ; 252
+              :null
+              (:jumpdest :foo))) :jumpdests)]
+      (is (= foo 257)))
+
     (let [{foo :foo bar :bar}
           ((analyze-jump-destinations
-            '((:null) (:jumpdest :foo) (:jumpdest :bar))) :jumpdests)]
+            '(:null (:jumpdest :foo) (:jumpdest :bar))) :jumpdests)]
       (is (= foo 1))
       (is (= bar 2)))
 
     (let [{foo :foo}
           ((analyze-jump-destinations
             `((:jump :foo)
-              ~@(for [x (range 252)] '(:null))
+              ~@(for [x (range 252)] :null)
               (:jumpdest :foo))) :jumpdests)]
       (is (= foo 255)))
-
-    (let [{foo :foo}
-          ((analyze-jump-destinations
-            `((:jump :foo) ; push2 0x0101, jump  (4)
-              ~@(for [x (range 253)] '(:null)) ; 253
-              (:jumpdest :foo))) :jumpdests)]
-      (is (= foo 257)))
 
     (let [{foo :foo bar :bar}
           ((analyze-jump-destinations
             `((:jumpdest :bar)
               (:jump :foo) ; push2 0x0101, jump  (4)
-              ~@(for [x (range 253)] '(:null)) ; 253
+              ~@(for [x (range 253)] :null) ; 253
               (:jumpdest :foo))) :jumpdests)]
       (is (= foo 258))
       (is (= bar 0)))
@@ -115,7 +123,7 @@
           (analyze-jump-destinations
            `((:jump :foo) ; push1 0x0, jump (2)
             ; 3
-             (:block :foo (:null) (stop))))
+             (:block :foo :null :stop)))
           {size :offset jumpdests :jumpdests blocksizes :blocksizes} result
           {foo :foo} jumpdests]
       (is (= (blocksizes :foo) 2))
@@ -125,7 +133,7 @@
     (let [result
           (analyze-jump-destinations
            `((:blockoffset :foo) ; push1 0x1 (2)
-             (:block :foo (stop))))
+             (:block :foo :stop)))
           {size :offset jumpdests :jumpdests blocksizes :blocksizes} result
           {foo :foo} jumpdests]
       (is (= (blocksizes :foo) 1))
@@ -135,8 +143,8 @@
     (let [result
           (analyze-jump-destinations
            `((:blockoffset :foo) ; push2 0xXXXX (3)
-             ~@(for [x (range 254)] '(:null))
-             (:block :foo (stop))))
+             ~@(for [x (range 254)] :null)
+             (:block :foo :stop)))
           {size :offset jumpdests :jumpdests blocksizes :blocksizes} result
           {foo :foo} jumpdests]
       (is (= foo 257)))
@@ -144,7 +152,7 @@
     (let [result
           (analyze-jump-destinations
            `((:blocksize :foo) ; push1 0xXX (3)
-             (:block :foo (:null))))
+             (:block :foo :null)))
           {size :offset jumpdests :jumpdests blocksizes :blocksizes} result
           {foo :foo} jumpdests]
       (is (= foo 2))
@@ -153,8 +161,31 @@
     (let [result
           (analyze-jump-destinations
            `((:blocksize :foo) ; push2 0xXXXX (3)
-             (:block :foo ~@(for [x (range 256)] '(:null)))))
+             (:block :foo ~@(for [x (range 256)] :null))))
           {size :offset jumpdests :jumpdests blocksizes :blocksizes} result
           {foo :foo} jumpdests]
-      (is (= foo 3)))))
+      (is (= foo 3)))
+
+    (let [result
+          (analyze-jump-destinations
+           '((:blocksize :contract) ; push1 12 (2)
+             (:blockoffset :contract) ; push1 12 (2)
+             0 ; push1 0x0 (2)
+             :codecopy
+             (:blocksize :contract) ; push1 12 (2)
+             0 ; push1 0x0 (2)
+             :return
+            ; offset 12
+             (:block :contract
+                     0xaabbcc ; push3 0xaabbcc (4)
+                     0 ; push1 0x0 (2)
+                     :mstore
+                     32 ; push1 0x32 (2)
+                     0  ; push1 0x32 (2)
+                    ; size: 12
+                     :return)))
+          {size :offset jumpdests :jumpdests blocksizes :blocksizes} result
+          {contract :contract} jumpdests]
+      (is (= contract 12))
+      (is (= (blocksizes :contract) 12)))))
 
