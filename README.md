@@ -1,4 +1,4 @@
-A EVM Low Level Lisp compiler, in Clojure.
+An EVM Low Level Lisp compiler, in Clojure.
 
 Start REPL:
 
