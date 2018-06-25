@@ -12,10 +12,21 @@
 (def opcode-push 0x60)
 
 (def opcodes {:push1 opcode-push ; ... push32
+
+              :stop 0x0
               :add 0x01
+
+              :codecopy 0x39
+
               :mstore 0x52
+
+              :jump 0x56
+              :jumpi 0x57
+              :jumpdest 0x5b
+
               :return 0xf3
-              :invalid invalid-opcode})
+              :invalid invalid-opcode
+              :null invalid-opcode})
 
 (defn resolve-binding [var scopes]
   "Return the stack position of a variable in lexical scopes"
@@ -87,10 +98,6 @@
     (symbol? inst) (opcodes (keyword inst) invalid-opcode)
     (keyword? inst) (opcodes inst invalid-opcode)))
 
-(defn bytecode [insts]
-  "Take a list of assembly instructions and produce bytecode"
-  (map instruction-bytecode insts))
-
 ; (defn number-bytesize [n]
 ;   "Number of bytes that can contain an integer"
 ;   (if (= n 0) 1
@@ -111,14 +118,6 @@
         opcode (+ opcode-push (- nbytes 1))]
       ; FIXME: check within 32 bytes
     (str (format "%02x" opcode) (format hexstr (biginteger n)))))
-
-(defn binary [opcodes]
-  (map (fn [opcode]
-         (match [opcode]
-           ; convert constant numbers to 32 bytes hex string
-           [(['quote n] :seq)] (push-bytecode n)
-           :else (format "%02x" opcode)))
-       opcodes))
 
 (defn analyze-jump-destinations [_instructions & {:keys [_jumps _destinations _offset]}]
   "Analyze the jump destinations offsets"
@@ -218,6 +217,31 @@
             ;   (recur (first instructions) (rest instructions) offset jumps destinations assumed-blocksize-push blocksizes))
 ))))))
 
+(defn opcodehex [opcode]
+  (format "%02x" (opcodes opcode invalid-opcode)))
+
+(defn bytecode [insts]
+  "Take a list of assembly instructions and produce bytecode"
+  (let [{jumpdests :jumpdests blocksizes :blocksizes} (analyze-jump-destinations insts)]
+    (flatten (map (fn [inst]
+                    (cond
+                      (number? inst) (push-bytecode inst)
+                      (keyword? inst) (opcodehex inst)
+                      :else
+                      ; special forms
+                      (case (first inst)
+                        :jump
+                        (let [label (second inst)]
+                          (bytecode `(~(jumpdests label) :jump)))
+                        :jumpdest (opcodehex :jumpdest)
+                        :block `(~(opcodehex :jumpdest) ~@(bytecode (drop 2 inst)))
+                        :blockoffset
+                        (let [label (second inst)]
+                          `(~(push-bytecode (jumpdests label))))
+                        :blocksize
+                        (let [label (second inst)]
+                          `(~(push-bytecode (blocksizes label))))))) insts))))
+
 (defn compile [blocks]
   "Compile map of named blocks to assembly")
 
@@ -231,4 +255,4 @@
 
 (defn genbinary [exp]
   "Compile a program to binary hex string"
-  (apply str (binary (genbytecode exp))))
+  (apply str (genbytecode exp)))

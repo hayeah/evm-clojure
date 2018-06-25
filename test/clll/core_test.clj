@@ -24,8 +24,20 @@
 
 (deftest bytecode-test
   (testing "Convert symbolic assembly to bytecode"
-    (is (= (bytecode '(10)) '('10)) "should quote a number constant")
-    (is (= (bytecode '(1 2 add)) '('1 '2 0x01)) "should convert symbolic instruction to opcode")))
+    (is (= (bytecode '(0xaabb)) '("61aabb")))
+    (is (= (bytecode '(1 2 :add)) '("6001" "6002" "01")))
+
+    (is (= (bytecode '((:jump :foo) :null :null (:jumpdest :foo) :null))
+           '("6005" "56" "fe" "fe" "5b" "fe")))
+
+    (is (= (bytecode '((:block :foo :null :null)))
+           '("5b" "fe" "fe")))
+
+    (is (= (bytecode '((:blockoffset :foo) (:block :foo :null :null)))
+           '("6002" "5b" "fe" "fe")))
+
+    (is (= (bytecode '((:blocksize :foo) (:block :foo :null)))
+           '("6001" "5b" "fe")))))
 
 (deftest number-bytesize-test
   (testing "Figure out how many bytes a number will occupy"
