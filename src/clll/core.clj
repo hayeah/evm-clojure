@@ -70,13 +70,12 @@
     (number? exp) `(~exp)
     (vector? exp) (mapcat assembly exp)
     :else
-    (let [inst (first exp)
+    (let [inst (keyword (first exp))
           args (rest exp)]
       (case inst
-          ; define a block
-        block '()
-        blockoffset '()
-        blocksize '()
+        :block `((:block ~(second exp) ~@(mapcat assembly (drop 2 exp))))
+        :blockoffset `((:blockoffset ~(second exp))) ; TODO check second is symbol
+        :blocksize `((:blocksize ~(second exp))) ; TODO check second is symbol
           ; A normal instruction.
           ; TODO: verify instruction is valid
         `(~@(mapcat assembly (reverse args)) ~inst)))))

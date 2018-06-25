@@ -4,9 +4,23 @@
 
 (deftest assembly-test
   (testing "Generate EVM assembly"
-    (is (= (assembly '(10)) '(10)))
-    (is (= (assembly '(add 11 12)) '(12 11 add)))
-    (is (= (assembly '(add (add 11 12) 13)) '(13 12 11 add add)))))
+    (is (= (assembly 10) '(10)))
+    (is (= (assembly '(add 11 12)) '(12 11 :add)))
+    (is (= (assembly '(add (add 11 12) 13)) '(13 12 11 :add :add)))
+    (is (= (assembly '[(add 1 2) 3 4]) '(2 1 :add 3 4)))
+
+    (is (= (assembly '[(block :foo 1 2) 3 4]) '((:block :foo 1 2) 3 4)))
+    (is (= (assembly '(blocksize :foo)) '((:blocksize :foo))))
+    (is (= (assembly '(blockoffset :foo)) '((:blockoffset :foo))))
+
+    (is (= (assembly '[(codecopy 0x0 (blockoffset :contract) (blocksize :contract))
+                       (return 0x0 (blocksize :contract))
+
+                       (block :contract
+                              (:mstore 0 0xaabbcc)
+                              (:return 0 32))])
+            ; output
+           '((:blocksize :contract) (:blockoffset :contract) 0 :codecopy (:blocksize :contract) 0 :return (:block :contract 11189196 0 :mstore 32 0 :return))))))
 
 (deftest bytecode-test
   (testing "Convert symbolic assembly to bytecode"
