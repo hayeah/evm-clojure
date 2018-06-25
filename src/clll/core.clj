@@ -130,10 +130,13 @@
    [instruction (first _instructions)
     instructions (rest _instructions)
     offset (or _offset 0)
-    ; jumps encountered, and their assume destination size
+    ; jumps encountered, and their assumed destination size
     jumps (or _jumps {})
     ; actual destinations
     destinations (or _destinations {})
+
+    ; number of bytes needed to push blocksize
+    assumed-blocksize-push {}
 
     blocksizes {}]
 
@@ -144,45 +147,71 @@
         ; TODO check jumping to unknown destination
         ; compare each jump size assumption with actual destination size. Retry if necessary
         (let [destination-sizes (into {} (for [[k v] destinations] [k (number-bytesize v)]))
+              actual-blocksize-push (into {} (for [[k v] blocksizes] [k (number-bytesize v)]))
+              new-assumed-blocksize-push (merge assumed-blocksize-push actual-blocksize-push)
               new-jumps (merge jumps destination-sizes)]
             ; (println "a" jumps offset destinations destination-sizes new-jumps)
-          (if (= jumps new-jumps)
+          ; (println :compare-block-push assumed-blocksize-push new-assumed-blocksize-push)
+          (if (and (= jumps new-jumps) (= new-assumed-blocksize-push assumed-blocksize-push))
             {:jumpdests destinations :offset offset :jumps new-jumps :blocksizes blocksizes} ; jump size assumptions are correct. return.
             (let [instructions _instructions]
                 ; jump size assumptions violated. go back and try again with new assumptions
-              (recur (first instructions) (rest instructions) 0 new-jumps {} {})))))
+              (recur (first instructions) (rest instructions) 0 new-jumps {} new-assumed-blocksize-push {})))))
 
-      ; track offset of each instruction. record all jumpst destinations
-      (match [instruction]
-        [([:block label & blockbody] :seq)]
-        (do
-          ; (println :block label offset)
-          (let [blockstart (+ offset 1)
-                result (analyze-jump-destinations blockbody :_jumps jumps :_destinations destinations :_offset blockstart)
-                {destinations :jumpdests jumps :jumps blockend :offset} result
-                ; jumpdest for the block
-                destinations (assoc destinations label offset)
-                ; block size excludes the jumpdest
-                blocksize (- blockend blockstart)
-                blocksizes (assoc blocksizes label blocksize)]
-              ; (println :block label blockbody)
-            (recur (first instructions) (rest instructions) blockend jumps destinations blocksizes))) [([:jump label] :seq)]
-        (let [seen-jump (contains? jumps label)
-              dest-size (if seen-jump (jumps label) 1) ; FIXME: should be size of current offset
-              jumps (if seen-jump jumps (assoc jumps label dest-size))
-              ; push(n) dest, jump
-              jump-size (+ 2 dest-size)
-              offset (+ offset jump-size)]
-          (recur (first instructions) (rest instructions) offset jumps destinations blocksizes)) [([:jumpdest label] :seq)]
-        (do (assert (not (contains? destinations label)) "jumpdest label should be unique")
-            (let [destinations (assoc destinations label offset)
-                  offset (+ offset 1)]
-              (recur (first instructions) (rest instructions) offset jumps destinations blocksizes)))
-        ; sizeof-instruction
-        :else
-        (let [instruction-size 1
-              offset (+ offset instruction-size)]
-          (recur (first instructions) (rest instructions) offset jumps destinations blocksizes))))))
+      (let [head (first instruction)]
+        (case head
+          :block
+          (let [label (second instruction) blockbody (drop 2 instruction)]
+            (do
+            ; (println :block label offset)
+              (let [blockstart (+ offset 1)
+                    result (analyze-jump-destinations blockbody :_jumps jumps :_destinations destinations :_offset blockstart)
+                    {destinations :jumpdests jumps :jumps blockend :offset} result
+                  ; jumpdest for the block
+                    destinations (assoc destinations label offset)
+                  ; block size excludes the jumpdest
+                    blocksize (- blockend blockstart)
+                    blocksizes (assoc blocksizes label blocksize)]
+                ; (println :block label blockbody)
+                (recur (first instructions) (rest instructions) blockend jumps destinations assumed-blocksize-push blocksizes))))
+          :blockoffset
+          (let [label (second instruction)
+                seen-jump (contains? jumps label)
+                dest-size (if seen-jump (jumps label) (number-bytesize offset))
+                jumps (if seen-jump jumps (assoc jumps label dest-size))
+                ; push(n)
+                push-size (+ 1 dest-size)
+                offset (+ offset push-size)]
+            (recur (first instructions) (rest instructions) offset jumps destinations assumed-blocksize-push blocksizes))
+          :blocksize
+          (let [label (second instruction)
+                seen-block (contains? assumed-blocksize-push label)
+                block-size (if seen-block (assumed-blocksize-push label) (number-bytesize offset))
+                assumed-blocksize-push (if seen-block assumed-blocksize-push (assoc assumed-blocksize-push label block-size))
+                ; push(n)
+                push-size (+ 1 block-size)
+                offset (+ offset push-size)]
+            (recur (first instructions) (rest instructions) offset jumps destinations
+              assumed-blocksize-push blocksizes))
+          :jump
+          (let [label (second instruction)
+                seen-jump (contains? jumps label)
+                dest-size (if seen-jump (jumps label) (number-bytesize offset))
+                jumps (if seen-jump jumps (assoc jumps label dest-size))
+                ; push(n) dest, jump
+                jump-size (+ 2 dest-size)
+                offset (+ offset jump-size)]
+            (recur (first instructions) (rest instructions) offset jumps destinations assumed-blocksize-push blocksizes))
+          :jumpdest
+          (let [label (second instruction)]
+            (do (assert (not (contains? destinations label)) "jumpdest label should be unique")
+                (let [destinations (assoc destinations label offset)
+                      offset (+ offset 1)]
+                  (recur (first instructions) (rest instructions) offset jumps destinations assumed-blocksize-push blocksizes))))
+          ; else
+          (let [instruction-size 1
+                offset (+ offset instruction-size)]
+            (recur (first instructions) (rest instructions) offset jumps destinations assumed-blocksize-push blocksizes)))))))
 
 (defn compile [blocks]
   "Compile map of named blocks to assembly")

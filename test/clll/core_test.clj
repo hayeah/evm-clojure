@@ -54,46 +54,46 @@
   (testing "analyze jump destinations"
     (let [{zero :zero foo :foo bar :bar}
           ((analyze-jump-destinations
-           '((:jumpdest :zero) ; 0
-             (:jump :foo) ; 1
-             (:jump :bar) ; 4
-             (:null) ; 7
-             (:null) ; 8
-             (:jumpdest :foo) ; 9
-             (:null) ; 10
-             (:null) ; 11
+            '((:jumpdest :zero) ; 0
+              (:jump :foo) ; 1
+              (:jump :bar) ; 4
+              (:null) ; 7
+              (:null) ; 8
+              (:jumpdest :foo) ; 9
+              (:null) ; 10
+              (:null) ; 11
              ; 12
-             (:jumpdest :bar))) :jumpdests)]
+              (:jumpdest :bar))) :jumpdests)]
       (is (= zero 0))
       (is (= foo 9))
       (is (= bar 12)))
 
     (let [{foo :foo bar :bar}
           ((analyze-jump-destinations
-           '((:null) (:jumpdest :foo) (:jumpdest :bar))) :jumpdests)]
+            '((:null) (:jumpdest :foo) (:jumpdest :bar))) :jumpdests)]
       (is (= foo 1))
       (is (= bar 2)))
 
     (let [{foo :foo}
           ((analyze-jump-destinations
-           `((:jump :foo)
-             ~@(for [x (range 252)] :null)
-             (:jumpdest :foo))) :jumpdests)]
+            `((:jump :foo)
+              ~@(for [x (range 252)] '(:null))
+              (:jumpdest :foo))) :jumpdests)]
       (is (= foo 255)))
 
     (let [{foo :foo}
           ((analyze-jump-destinations
-           `((:jump :foo) ; push2 0x0101, jump  (4)
-             ~@(for [x (range 253)] :null) ; 253
-             (:jumpdest :foo))) :jumpdests)]
+            `((:jump :foo) ; push2 0x0101, jump  (4)
+              ~@(for [x (range 253)] '(:null)) ; 253
+              (:jumpdest :foo))) :jumpdests)]
       (is (= foo 257)))
 
     (let [{foo :foo bar :bar}
           ((analyze-jump-destinations
-           `((:jumpdest :bar)
-             (:jump :foo) ; push2 0x0101, jump  (4)
-             ~@(for [x (range 253)] :null) ; 253
-             (:jumpdest :foo))) :jumpdests)]
+            `((:jumpdest :bar)
+              (:jump :foo) ; push2 0x0101, jump  (4)
+              ~@(for [x (range 253)] '(:null)) ; 253
+              (:jumpdest :foo))) :jumpdests)]
       (is (= foo 258))
       (is (= bar 0)))
 
@@ -101,9 +101,46 @@
           (analyze-jump-destinations
            `((:jump :foo) ; push1 0x0, jump (2)
             ; 3
-             (:block :foo (null) (stop))))
+             (:block :foo (:null) (stop))))
           {size :offset jumpdests :jumpdests blocksizes :blocksizes} result
           {foo :foo} jumpdests]
       (is (= (blocksizes :foo) 2))
       (is (= foo 3))
-      (is (= size 6)))))
+      (is (= size 6)))
+
+    (let [result
+          (analyze-jump-destinations
+           `((:blockoffset :foo) ; push1 0x1 (2)
+             (:block :foo (stop))))
+          {size :offset jumpdests :jumpdests blocksizes :blocksizes} result
+          {foo :foo} jumpdests]
+      (is (= (blocksizes :foo) 1))
+      (is (= foo 2))
+      (is (= size 4)))
+
+    (let [result
+          (analyze-jump-destinations
+           `((:blockoffset :foo) ; push2 0xXXXX (3)
+             ~@(for [x (range 254)] '(:null))
+             (:block :foo (stop))))
+          {size :offset jumpdests :jumpdests blocksizes :blocksizes} result
+          {foo :foo} jumpdests]
+      (is (= foo 257)))
+
+    (let [result
+          (analyze-jump-destinations
+           `((:blocksize :foo) ; push1 0xXX (3)
+             (:block :foo (:null))))
+          {size :offset jumpdests :jumpdests blocksizes :blocksizes} result
+          {foo :foo} jumpdests]
+      (is (= foo 2))
+      (is (= (blocksizes :foo) 1)))
+
+    (let [result
+          (analyze-jump-destinations
+           `((:blocksize :foo) ; push2 0xXXXX (3)
+             (:block :foo ~@(for [x (range 256)] '(:null)))))
+          {size :offset jumpdests :jumpdests blocksizes :blocksizes} result
+          {foo :foo} jumpdests]
+      (is (= foo 3)))))
+
